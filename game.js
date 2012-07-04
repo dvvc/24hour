@@ -18,7 +18,7 @@ var Binary = function () {
 	var CANNON_COLOR = 'E34B4D';
 	var SECONDS_PER_ROTATION = 20;
 	var RADS_PER_FRAME = (Math.PI * 2 * MS_PER_FRAME) / (SECONDS_PER_ROTATION * 1000);
-	
+	var PLANET2_PEAKS = 4, PLANET2_PEAK_WIDTH = 6, PLANET2_CANNONS = 4;	
 	
 	/* Globals */
 	var ctx;
@@ -32,6 +32,7 @@ var Binary = function () {
 	var cannonList = [], cannonColumns = [], selectedCannon;
 	var planetColor = 'black';
 	var nColumns, columnAngle;
+	var planet2Cannons = [];
 	
 	var planet1, planet2;
 	
@@ -89,11 +90,23 @@ var Binary = function () {
 	Planet.prototype.addRotation = function(rads) {
 		this.rotation = (this.rotation + rads) % (Math.PI*2);
 	};
+
+	Planet.prototype.canPlaceCannon = function(col) {
+		
+		for (var i = col; i < col+4; i++) {
+			var c = i % nColumns;
+			for (var j = 0; j < MAX_LEVELS; j++) {
+				if (!this.isBlockEmpty(c,j)) return false;
+			}
+		}
+		return true;
+	};
+
 	
 	Planet.prototype.generateRandomPlanet = function() {
 
-		var nPeaks = 6;
-		var width = 10;
+		var nPeaks = PLANET2_PEAKS;
+		var width = PLANET2_PEAK_WIDTH;
 		var peak;
 		var arr;
 		
@@ -112,10 +125,27 @@ var Binary = function () {
 					this.columns[peak+j][z] = 1;
 				}
 			}
+		}
+
+		// place the cannons
+		var placedCannons = 0;
+		
+		while (placedCannons < PLANET2_CANNONS) {
+
+			var candidateCannon;
+			do {
+				candidateCannon = Math.floor(Math.random() * nColumns);	
+			} while(this.canPlaceCannon(candidateCannon));
+			
+			
+
+			placedCannons++;
+
 			
 		}
+		
 	};
-	
+
 	Planet.prototype.isBlockEmpty = function(column, level) {
 		return this.columns[column][level] === 0;
 	};
@@ -212,19 +242,6 @@ var Binary = function () {
 
 
 	
-	// all base blocks in the cannon place need to be empty
-	var canBuildCannon = function(column) {
-	
-		for (var i = column; i < column+4; i++) {
-			if (!planet1.isBlockEmpty(i%nColumns, 0)) {
-				return false;
-			}
-		}
-		
-		return true;
-	
-	};
-	
 	
 	var handleMouseClick = function(evt) {
 	
@@ -239,7 +256,7 @@ var Binary = function () {
 					}
 				}
 				else if (buildMode == CANNON) {
-					if (canBuildCannon(mouseColumn)) {
+					if (planet1.canPlaceCannon(mouseColumn)) {
 						var cannonPosition = columnToCoords(2+mouseColumn, (BLOCK_WIDTH) +PLANET_RADIUS);
 						cannonPosition.add(planet1.position);
 						
@@ -281,6 +298,8 @@ var Binary = function () {
 				
 				missiles.push(new Missile(missilePos, missileDir)); //new Point(x, y));
 				
+				// unselect the cannon
+				selectedCannon = undefined;
 				
 				
 			}
@@ -418,10 +437,10 @@ var Binary = function () {
 			if (l>=0 && l < MAX_LEVELS && cols[c][l] !== 0) {
 				//alert("Collision at level " + l);
 				for(var i = c - EXPLOSION_RADIUS; i < c + EXPLOSION_RADIUS; i++) {
-					c2 = i % nColumns;
+					c2 = (i + nColumns) % nColumns;
 					for (var j = l - EXPLOSION_RADIUS; j < l + EXPLOSION_RADIUS; j++) {
 							if (j >= 0 && j < MAX_LEVELS) {
-								cols[c2][j] = 0;
+								cols[c2][j] = 0;									
 							}
 					}
 				}
@@ -573,7 +592,7 @@ var Binary = function () {
 				if (buildMode == TOWER && planet1.isBlockEmpty(mouseColumn, mouseLevel)) {
 					drawBlock(planet1, mouseColumn, mouseLevel, 'green');
 				}
-				else if (buildMode == CANNON && canBuildCannon(mouseColumn)) {
+				else if (buildMode == CANNON && planet1.canPlaceCannon(mouseColumn)) {
 					drawCannon(planet1, mouseColumn, 'orange');
 				}
 			}
