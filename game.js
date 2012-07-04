@@ -7,17 +7,21 @@ var Binary = function () {
 	var MOUSE_THRESHOLD = 40;
 	var MAX_LEVELS = 8;
 	var NO_BUILD =0, TOWER = 1, CANNON = 2;
-
+	var REBUILD = 0, WAR = 1;
+	
 	/* Globals */
 	var ctx;
 	var canvasTop, canvasLeft;
 	var mouseX, mouseY, mouseAngle, mouseColumn, mouseLevel;
 	var planetCirc;
 	var mouseInThreshold;
-	var buildMode;
+	var buildMode, gameMode;
 	var planetColor = 'black';
 	var nColumns, columnAngle;
-	var planetX = 200, planetY = 200;
+	var planetX = 300, planetY = 200;
+	
+	var planet2X = 700, planet2Y = 400;
+	var columns2;
 	
 	/**
 	* The columns array determines what is there in the planet at a certain point. Columns are counted starting from theta = 0 rad
@@ -53,9 +57,9 @@ var Binary = function () {
 		// if the mouse is in the threshold, calculate the column
 		if (mouseInThreshold) {
 			mouseAngle = (Math.atan2(mouseY-planetY, mouseX-planetX) + Math.PI*2) % (Math.PI*2);
-			mouseColumn = ((parseInt(mouseAngle / columnAngle) *columnAngle) * nColumns) / (Math.PI * 2);
+			mouseColumn = ((Math.floor(mouseAngle / columnAngle) *columnAngle) * nColumns) / (Math.PI * 2);
 			// hack to avoid rounding errors like 24.9999999
-			mouseColumn = parseInt(mouseColumn + 0.5);
+			mouseColumn = Math.floor(mouseColumn + 0.5);
 			
 			// if in TOWER build mode, calculate the level
 			if (buildMode == TOWER) {
@@ -88,8 +92,6 @@ var Binary = function () {
 		return true;
 	
 	};
-	
-	
 	
 	
 	var handleMouseClick = function(evt) {
@@ -130,6 +132,82 @@ var Binary = function () {
 		}
 	};
 	
+	var toggleMode = function(mode) {
+	
+		$("#rebuildb").removeAttr("disabled");
+		$("#warb").removeAttr("disabled");
+		gameMode = mode;
+		
+		if (mode == REBUILD) {
+			$("#rebuildb").attr("disabled", true);
+		}
+		else if (mode == WAR) {
+			$("#warb").attr("disabled", true);
+		}
+	};
+	
+	
+	var makeEmptyPlanet = function() {
+		var cols = Array(nColumns);
+		for (var i = 0; i < nColumns; i++) {
+			var stack = Array(MAX_LEVELS);
+			for (var j = 0; j < MAX_LEVELS; j++) {
+				stack[j] = 0;
+			}
+			cols[i] = stack;
+		}
+		return cols;
+	};
+	
+	var midpointDispl = function(arr, low, high, h, dampen) {
+	
+		if (low >= high) return;
+		
+		var mid = low + (Math.floor((high - low) / 2));
+		var rand = 4 + Math.floor(Math.random() * 4);
+		
+		arr[mid] = Math.floor(rand * h);
+		
+		midpointDispl(arr, low, mid, h * dampen, dampen);
+		midpointDispl(arr, mid+1, high, h * dampen, dampen);
+	
+	};
+	
+	var generatePlanet2 = function() {
+	
+		var cols;
+		var nPeaks = 8;
+		var width = 10;
+		var peak;
+		var arr;
+		
+		cols = makeEmptyPlanet();
+		
+		// choose the initial peaks
+		for (var i = 0; i < nPeaks; i++) {
+		
+			arr = Array(width);
+		
+			peak = i*Math.floor(nColumns/nPeaks);
+			midpointDispl(arr, 0, width, 1, 0.9);
+			
+			for(var j=0; j<width; j++) {
+				for(var z=0; z<arr[j]; z++) {
+					cols[peak+j][z] = 1;
+				}
+			}
+			
+		}
+		
+		
+	
+		
+	
+		return cols;
+	};
+	
+	
+	
 	var start = function() {
 		ctx = document.getElementById("canvas").getContext("2d");
 		canvasTop = $("canvas").offset().top;
@@ -142,22 +220,21 @@ var Binary = function () {
 		$("#cannonb").removeAttr("disabled");
 		$("#towerb").click(function() { toggleBuild(TOWER); });
 		$("#cannonb").click(function() { toggleBuild(CANNON); });
+		$("#rebuildb").click(function() {toggleMode(REBUILD); });
+		$("#warb").click(function() {toggleMode(WAR); });
 		
 		planetCirc = 2 * Math.PI * PLANET_RADIUS;
 			
-		nColumns = parseInt(planetCirc / BLOCK_WIDTH);
-		columns = Array(nColumns);
-		for (var i = 0; i < nColumns; i++) {
-			var stack = Array(MAX_LEVELS);
-			for (var j = 0; j < MAX_LEVELS; j++) {
-				stack[j] = 0;
-			}
-			columns[i] = stack;
-		}
+		nColumns = Math.floor(planetCirc / BLOCK_WIDTH);
+		columns = makeEmptyPlanet();
+			
+		columns2 = generatePlanet2();
 			
 		columnAngle = Math.PI * 2 / nColumns;
 		mouseInThreshold = false;
 		buildMode = NO_BUILD;
+		
+		toggleMode(REBUILD);
 
 		// start the main loop
 		mainLoop();
@@ -176,39 +253,36 @@ var Binary = function () {
 
 	};
 
-	var drawBlock = function(column, level, color) {
+	// px and py are the planet's center coordinates
+	var drawBlock = function(px, py, column, level, color) {
 		ctx.save()
 		ctx.fillStyle = color;
 		var x = ((PLANET_RADIUS + (level * BLOCK_WIDTH))* Math.cos(column*columnAngle));
 		var y = ((PLANET_RADIUS + (level * BLOCK_WIDTH)) * Math.sin(column*columnAngle));
-		ctx.translate(planetX+x, planetY+y);
+		ctx.translate(px+x, py+y);
 		ctx.rotate(column*columnAngle);
 		ctx.fillRect(0, 0, BLOCK_WIDTH, BLOCK_WIDTH);
 		ctx.restore()
 	}
 	
-	var drawCannon = function(column, color) {
+	var drawCannon = function(px, py, column, color) {
 		for (var c = column; c < column + 4; c++) {
-			drawBlock(c, 0, color);
+			drawBlock(px, py, c, 0, color);
 		}
-		drawBlock(column+1, 1, color);
-		drawBlock(column+2, 1, color);
-		drawBlock(column+1, 2, color);
-		drawBlock(column+2, 2, color);
+		drawBlock(px, py, column+1, 1, color);
+		drawBlock(px, py, column+2, 1, color);
+		drawBlock(px, py, column+1, 2, color);
+		drawBlock(px, py, column+2, 2, color);
 	}
 	
-	
-	var draw = function() {
-		
-		ctx.clearRect(0, 0, WIDTH, HEIGHT);
-		
+	var drawPlanet = function(px, py, cols) {
 		ctx.beginPath();
-		ctx.arc(planetX, planetY, PLANET_RADIUS, 0, Math.PI * 2);
+		ctx.arc(px, py, PLANET_RADIUS, 0, Math.PI * 2);
 		ctx.stroke();
 		
 		// kind of a hack: do not start in a cannon column
 		var startColumn = 0;
-		while (columns[startColumn][0] == CANNON) {
+		while (cols[startColumn][0] == CANNON) {
 			startColumn++;
 		}
 		
@@ -218,27 +292,40 @@ var Binary = function () {
 			var c = i%nColumns;
 			
 			// if a column has a 2, draw a cannon, then skip three more columns
-			if (columns[c][0] == CANNON) {
-				drawCannon(c, 'red');
+			if (cols[c][0] == CANNON) {
+				drawCannon(px, py, c, 'red');
 				i += 3;
 			}
 			else {
 				// else, try a tower
 				for (var j=0; j < MAX_LEVELS; j++) {
-					if (columns[c][j] == 1) {
-						drawBlock(c,j, 'black');
+					if (cols[c][j] == 1) {
+						drawBlock(px, py, c,j, 'black');
 					}
 				}
 			}
 		}
+	}
+	
+	var draw = function() {
+		
+		ctx.clearRect(0, 0, WIDTH, HEIGHT);
+		
+		// Planet One
+		drawPlanet(planetX, planetY, columns);
+		
+		// Planet Two
+		drawPlanet(planet2X, planet2Y, columns2);
+		
+		
 		
 		// draw mouse position
 		if (mouseInThreshold) {
 			if (buildMode == TOWER && isBlockEmpty(mouseColumn, mouseLevel)) {
-				drawBlock(mouseColumn, mouseLevel, 'green');
+				drawBlock(planetX, planetY, mouseColumn, mouseLevel, 'green');
 			}
 			else if (buildMode == CANNON && canBuildCannon(mouseColumn)) {
-				drawCannon(mouseColumn, 'orange');
+				drawCannon(planetX, planetY, mouseColumn, 'orange');
 			}
 		}
 		
@@ -258,7 +345,7 @@ var Binary = function () {
 		update();
 		draw();
 		loopTime = new Date().getTime() - startLoop;
-		ctx.fillText(parseInt((1000/loopTime)) + " FPS", WIDTH - 80, HEIGHT - 20);
+		ctx.fillText(Math.floor((1000/loopTime)) + " FPS", WIDTH - 80, HEIGHT - 20);
 		ctx.fillText("Angle: " + mouseAngle, WIDTH - 80, HEIGHT - 40);
 		setTimeout(mainLoop, 33);
 	
