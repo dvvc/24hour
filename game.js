@@ -4,19 +4,25 @@ var Binary = function () {
 	var WIDTH = 1024, HEIGHT = 640;
 	var PLANET_RADIUS = 100;
 	var BLOCK_WIDTH = 4;
-	var MOUSE_THRESHOLD = 40;
+	var PLANET_THRESHOLD = 40;
+	var CANNON_THRESHOLD = 30;
 	var MAX_LEVELS = 8;
 	var NO_BUILD =0, TOWER = 1, CANNON = 2;
 	var REBUILD = 0, WAR = 1;
+	var SHOOTING_ANGLE = Math.PI; // In radians
+	var MISSILE_SPEED = 6, EXPLOSION_RADIUS = 2;
+	var NO_COL = 0, COL_PLANET = 1, COL_BUILDINGS = 2, COL_OUTBOUNDS = 3;
 	
 	/* Globals */
 	var ctx;
+	var debug = false;
 	var canvasTop, canvasLeft;
 	var mouseX, mouseY, mouseAngle, mouseColumn, mouseLevel;
 	var planetCirc;
 	var mouseInThreshold;
 	var buildMode, gameMode;
 	var shooting = false, missiles = [], target;
+	var cannonList = [], cannonColumns = [], selectedCannon;
 	var planetColor = 'black';
 	var nColumns, columnAngle;
 	var planetX = 300, planetY = 200;
@@ -43,24 +49,49 @@ var Binary = function () {
 		return (Math.sqrt(Math.pow(p.x-this.x, 2) + Math.pow(p.y-this.y,2)));
 	}
 	
+	Point.prototype.add = function(p) {
+		this.x += p.x;
+		this.y += p.y;
+	}
+	
+	
+	var Missile = function(p, d) {
+		this.position = p;
+		this.direction = d;
+	}
+	
 	/************************** Functions *****************************/
+	
+	var coordsToColumn = function(p, planetPos) {
+	
+		var angle, column, dist, level;
+		
+		angle = (Math.atan2(p.y-planetPos.y, p.x-planetPos.x) + Math.PI*2) % (Math.PI*2);
+		column = ((Math.floor(angle / columnAngle) *columnAngle) * nColumns) / (Math.PI * 2);
+		// hack to avoid rounding errors like 24.9999999
+		column = Math.floor(column + 0.5);
+		
+		dist = p.distance(planetPos);
+		level = Math.floor((dist - PLANET_RADIUS) / BLOCK_WIDTH);
+		return [column, level];	
+	};
+	
 	var updateMousePosition = function(evt) {
 	
-		var distToPlanet;
+		var distToPlanet, mousePos;
 		
-		mouseX = evt.clientX - canvasLeft;
-		mouseY = evt.clientY - canvasTop;
 		
-		// find if the mouse is in the corona at MOUSE_THRESHOLD distance of the circumference
-		distToPlanet = new Point(mouseX, mouseY).distance(new Point(planetX,planetY));
-		mouseInThreshold = (distToPlanet > (PLANET_RADIUS - MOUSE_THRESHOLD)) && (distToPlanet < (PLANET_RADIUS + MOUSE_THRESHOLD));
+		mousePos = new Point(evt.clientX - canvasLeft, evt.clientY - canvasTop);
+		
+		// find if the mouse is in the corona at PLANET_THRESHOLD distance of the circumference
+		distToPlanet = mousePos.distance(new Point(planetX,planetY));
+		mouseInThreshold = (distToPlanet > (PLANET_RADIUS - PLANET_THRESHOLD)) && (distToPlanet < (PLANET_RADIUS + PLANET_THRESHOLD));
 		
 		// if the mouse is in the threshold, calculate the column
 		if (mouseInThreshold) {
-			mouseAngle = (Math.atan2(mouseY-planetY, mouseX-planetX) + Math.PI*2) % (Math.PI*2);
-			mouseColumn = ((Math.floor(mouseAngle / columnAngle) *columnAngle) * nColumns) / (Math.PI * 2);
-			// hack to avoid rounding errors like 24.9999999
-			mouseColumn = Math.floor(mouseColumn + 0.5);
+			var arr = coordsToColumn(mousePos, new Point(planetX,planetY));
+			mouseColumn = arr[0];
+			//console.log(arr[1]);
 			
 			if (gameMode == REBUILD) {
 			
@@ -76,6 +107,21 @@ var Binary = function () {
 						mouseLevel = 0;
 					}
 				}
+			}
+			else if (gameMode == WAR) {
+			
+				// detect if the mouse is close to a cannon
+				if (!shooting) {
+					for(var c=0; c<cannonList.length; c++) {
+						if (mousePos.distance(cannonList[c]) < CANNON_THRESHOLD) {
+							selectedCannon = c;
+							return;
+						}
+					}
+					selectedCannon = undefined;
+				}
+				
+			
 			}
 		}
 	};
@@ -110,6 +156,12 @@ var Binary = function () {
 				}
 				else if (buildMode == CANNON) {
 					if (canBuildCannon(mouseColumn)) {
+						var cannonPosition = columnToCoords(2+mouseColumn, (BLOCK_WIDTH) +PLANET_RADIUS);
+						cannonPosition.add(new Point(planetX, planetY));
+						
+						cannonList.push(cannonPosition);
+						cannonColumns.push(mouseColumn);
+						
 						for (var i=mouseColumn; i < mouseColumn + 4; i++) {
 							for (var j=0; j < MAX_LEVELS; j++) {
 								columns[i][j] = 2;
@@ -122,47 +174,48 @@ var Binary = function () {
 		}
 		else if (gameMode == WAR) {
 			// shot a missile
-			if (! shooting) {
+			if (!shooting && isCannonSelected()) {
 				shooting = true;
 				
-				// repeated!!!!
-				target = new Point(evt.clientX - canvasLeft, evt.clientY - canvasTop);
+				// repeated?
+				var mousePos = new Point(evt.clientX - canvasLeft, evt.clientY - canvasTop);
 				
-				// find all cannons
-				// same hack as in drawing!!
-				////////////
-				var cannons = [];
-				var startColumn = 0;
-				while (columns[startColumn][0] == CANNON) {
-					startColumn++;
-				}
 				
-				// draw the columns
-				for (var i = startColumn; i < nColumns+startColumn; i++) {
 				
-					var c = i%nColumns;
+				// Shoot a missile from the selected cannon
+				var missilePos = columnToCoords(2+cannonColumns[selectedCannon], PLANET_RADIUS + (4*BLOCK_WIDTH));
 					
-					// if a column has a 2, draw a cannon, then skip three more columns
-					if (columns[c][0] == CANNON) {
-						cannons.push(c);
-						i += 3;
-					}
-				}
-				///////
+				//translate by adding the planet position
+				missilePos.add(new Point(planetX, planetY));
 				
-				// Now, shoot a missile from each one
-				for (var j = 0; j < cannons.length; j++) {
-					// repeated: need a generic function to translate between column and coords
-					var x = planetX + ((PLANET_RADIUS + (4 * BLOCK_WIDTH))* Math.cos((2+cannons[j])*columnAngle));
-					var y = planetY + ((PLANET_RADIUS + (4 * BLOCK_WIDTH)) * Math.sin((2+cannons[j])*columnAngle));
-					missiles.push(new Point(x, y));
-				}
+				// direction
+				var h = Math.sqrt(Math.pow(mousePos.y - cannonList[selectedCannon].y, 2) + 
+								  Math.pow(mousePos.x - cannonList[selectedCannon].x, 2));
+				
+				var missileDir = new Point((mousePos.x - cannonList[selectedCannon].x)/h,
+										   (mousePos.y - cannonList[selectedCannon].y)/h);
+										
+				
+				missiles.push(new Missile(missilePos, missileDir)); //new Point(x, y));
+				
 				
 				
 			}
 		}
 	
 	};
+	
+	var isCannonSelected = function() {
+	
+		return typeof(selectedCannon) !== 'undefined';
+	};
+	
+	var columnToCoords = function(column, radius) {
+	
+		var angle = column * columnAngle;
+		return (new Point(radius*Math.cos(angle), radius*Math.sin(angle)));
+	
+	}
 	
 	var toggleBuild = function(mode) {
 	
@@ -224,7 +277,7 @@ var Binary = function () {
 	var generatePlanet2 = function() {
 	
 		var cols;
-		var nPeaks = 8;
+		var nPeaks = 6;
 		var width = 10;
 		var peak;
 		var arr;
@@ -250,7 +303,10 @@ var Binary = function () {
 		return cols;
 	};
 	
-	
+	// toggle debug
+	var doDebug = function() {
+		debug = debug ? false : true;
+	}
 	
 	var start = function() {
 		ctx = document.getElementById("canvas").getContext("2d");
@@ -266,6 +322,7 @@ var Binary = function () {
 		$("#cannonb").click(function() { toggleBuild(CANNON); });
 		$("#rebuildb").click(function() {toggleMode(REBUILD); });
 		$("#warb").click(function() {toggleMode(WAR); });
+		$("#debugb").click(doDebug);
 		
 		planetCirc = 2 * Math.PI * PLANET_RADIUS;
 			
@@ -279,16 +336,93 @@ var Binary = function () {
 		buildMode = NO_BUILD;
 		shooting = false;
 		
+		
 		toggleMode(REBUILD);
 
 		// start the main loop
 		mainLoop();
 	};
 
+	// agains which team are we checking?
+	var detectCollision = function(p, team) {
+	
+		var cols, planetPos, distToPlanet;
+	
+		if (team === 0) {
+			cols = columns;
+			planetPos = new Point(planetX, planetY);
+		}
+		else {
+			cols = columns2;
+			planetPos = new Point(planet2X, planet2Y);
+		}
+		
+		distToPlanet = p.distance(planetPos);
+		
+		// check if the collision was against the planet itself
+		if ( (p.distance(new Point(planetX, planetY)) <= PLANET_RADIUS) || 
+			 (p.distance(new Point(planet2X, planet2Y)) <= PLANET_RADIUS)) { //distToPlanet <= PLANET_RADIUS) {
+			return COL_PLANET;
+		}
+		
+		if (p.x > WIDTH || p.x < 0 || p.y > HEIGHT || p.y < 0) {
+			return COL_OUTBOUNDS;
+		}
+		
+		// check if the missile is inside the building area
+		if (distToPlanet > PLANET_RADIUS && distToPlanet < (PLANET_RADIUS + (BLOCK_WIDTH * MAX_LEVELS))) {
+		
+			// check which column and level it collided to
+			var arr = coordsToColumn(p, planetPos);
+			var c = arr[0];
+			var l = arr[1];
+			var c2;
+			
+			if (l>=0 && l < MAX_LEVELS && cols[c][l] !== 0) {
+				//alert("Collision at level " + l);
+				for(var i = c - EXPLOSION_RADIUS; i < c + EXPLOSION_RADIUS; i++) {
+					c2 = i % nColumns;
+					for (var j = l - EXPLOSION_RADIUS; j < l + EXPLOSION_RADIUS; j++) {
+							if (j >= 0 && j < MAX_LEVELS) {
+								cols[c2][j] = 0;
+							}
+					}
+				}
+				
+				
+				return COL_BUILDINGS;
+			}
+		}
+	
+		return NO_COL;
+	}
+	
 	var update = function() {
 
+		var pos, dir, missiles2 = [];
+		
 		if (gameMode == WAR) {
 			// process missiles
+			for (var m = 0; m < missiles.length; m++) {
+					pos = missiles[m].position;
+					dir = missiles[m].direction;
+					
+					pos.x += (dir.x * MISSILE_SPEED);
+					pos.y += (dir.y * MISSILE_SPEED);
+					
+					// detect collision
+					if (detectCollision(pos, 1) !== NO_COL) {
+						shooting = false;
+					}
+					else {
+						missiles2.push(missiles[m]);
+					}
+					
+			}
+			missiles = missiles2;
+			
+			
+			
 		}
 
 	};
@@ -315,10 +449,17 @@ var Binary = function () {
 		drawBlock(px, py, column+2, 2, color);
 	}
 	
-	var drawPlanet = function(px, py, cols) {
+	var drawPlanet = function(px, py, cols, color) {
+		
+		color = color || 'white';
+		
+		ctx.save();
 		ctx.beginPath();
 		ctx.arc(px, py, PLANET_RADIUS, 0, Math.PI * 2);
 		ctx.stroke();
+		ctx.fillStyle = color;
+		ctx.fill();
+		ctx.restore();
 		
 		// kind of a hack: do not start in a cannon column
 		var startColumn = 0;
@@ -350,12 +491,27 @@ var Binary = function () {
 	
 	var drawMissile = function(point, color) {
 		ctx.save();
-		ctx.fillStyle = color;
+		//console.log("drawging at " + point.x + " " + point.y);
 		ctx.beginPath();
+		ctx.strokeStyle = 'red';
+		ctx.fillStyle = color;
 		ctx.arc(point.x, point.y, 2, 0, Math.PI*2);
 		ctx.fill();
 		ctx.restore();
 	}
+	
+	var drawShootingArc = function() {
+	
+		
+		var cpos = cannonList[selectedCannon];
+		ctx.save();
+		ctx.fillStyle = 'rgba(255,255,153,0.5';
+		ctx.beginPath();
+		ctx.arc(cpos.x , cpos.y, 30, 0, Math.PI * 2);
+		ctx.fill();
+		ctx.restore();
+	
+	};
 	
 	var draw = function() {
 		
@@ -365,7 +521,7 @@ var Binary = function () {
 		drawPlanet(planetX, planetY, columns);
 		
 		// Planet Two
-		drawPlanet(planet2X, planet2Y, columns2);
+		drawPlanet(planet2X, planet2Y, columns2, '#eee');
 		
 		
 		
@@ -382,11 +538,23 @@ var Binary = function () {
 		}
 		else if (gameMode == WAR) {
 			if (shooting) {
+
 				for (var m = 0; m < missiles.length; m++) {
-					drawMissile(missiles[m], 'gray');
+				
+					drawMissile(missiles[m].position, 'gray');
 				}
 			}
+			else if (isCannonSelected()) {
+				drawShootingArc();
+			}
 		}
+		
+		if (debug) {
+		
+			
+		
+		}
+		
 		//ctx.save();
 		//ctx.fillStyle = planetColor;
 		//ctx.fill();
@@ -405,7 +573,7 @@ var Binary = function () {
 		loopTime = new Date().getTime() - startLoop;
 		ctx.fillText(Math.floor((1000/loopTime)) + " FPS", WIDTH - 80, HEIGHT - 20);
 		ctx.fillText("Angle: " + mouseAngle, WIDTH - 80, HEIGHT - 40);
-		setTimeout(mainLoop, 33);
+		setTimeout(mainLoop, 25);
 	
 	};
 
