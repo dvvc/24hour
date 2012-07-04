@@ -14,3 +14,7 @@ div#buttons {
 	width: 200px;
 	float: left;
 }
+
+.war {
+	cursor: crosshair;
+}

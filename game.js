@@ -16,6 +16,7 @@ var Binary = function () {
 	var planetCirc;
 	var mouseInThreshold;
 	var buildMode, gameMode;
+	var shooting = false, missiles = [], target;
 	var planetColor = 'black';
 	var nColumns, columnAngle;
 	var planetX = 300, planetY = 200;
@@ -61,16 +62,19 @@ var Binary = function () {
 			// hack to avoid rounding errors like 24.9999999
 			mouseColumn = Math.floor(mouseColumn + 0.5);
 			
-			// if in TOWER build mode, calculate the level
-			if (buildMode == TOWER) {
-				mouseLevel = 0;
-				while (mouseLevel < MAX_LEVELS && columns[mouseColumn][mouseLevel] != 0 ) {
-					mouseLevel++;
-				}
+			if (gameMode == REBUILD) {
 			
-				// change this at some point
-				if (mouseLevel >= MAX_LEVELS) {
+				// if in TOWER build mode, calculate the level
+				if (buildMode == TOWER) {
 					mouseLevel = 0;
+					while (mouseLevel < MAX_LEVELS && columns[mouseColumn][mouseLevel] != 0 ) {
+						mouseLevel++;
+					}
+				
+					// change this at some point
+					if (mouseLevel >= MAX_LEVELS) {
+						mouseLevel = 0;
+					}
 				}
 			}
 		}
@@ -96,25 +100,67 @@ var Binary = function () {
 	
 	var handleMouseClick = function(evt) {
 	
-		if (mouseInThreshold) {
-			if (buildMode == TOWER) {
-				if (isBlockEmpty(mouseColumn, mouseLevel)) {
-					columns[mouseColumn][mouseLevel] = 1;
-					updateMousePosition(evt);
+		if (gameMode == REBUILD) {
+			if (mouseInThreshold) {
+				if (buildMode == TOWER) {
+					if (isBlockEmpty(mouseColumn, mouseLevel)) {
+						columns[mouseColumn][mouseLevel] = 1;
+						updateMousePosition(evt);
+					}
 				}
-			}
-			else if (buildMode == CANNON) {
-				if (canBuildCannon(mouseColumn)) {
-					for (var i=mouseColumn; i < mouseColumn + 4; i++) {
-						for (var j=0; j < MAX_LEVELS; j++) {
-							columns[i][j] = 2;
+				else if (buildMode == CANNON) {
+					if (canBuildCannon(mouseColumn)) {
+						for (var i=mouseColumn; i < mouseColumn + 4; i++) {
+							for (var j=0; j < MAX_LEVELS; j++) {
+								columns[i][j] = 2;
+							}
 						}
 					}
 				}
+				
 			}
-			
 		}
-		
+		else if (gameMode == WAR) {
+			// shot a missile
+			if (! shooting) {
+				shooting = true;
+				
+				// repeated!!!!
+				target = new Point(evt.clientX - canvasLeft, evt.clientY - canvasTop);
+				
+				// find all cannons
+				// same hack as in drawing!!
+				////////////
+				var cannons = [];
+				var startColumn = 0;
+				while (columns[startColumn][0] == CANNON) {
+					startColumn++;
+				}
+				
+				// draw the columns
+				for (var i = startColumn; i < nColumns+startColumn; i++) {
+				
+					var c = i%nColumns;
+					
+					// if a column has a 2, draw a cannon, then skip three more columns
+					if (columns[c][0] == CANNON) {
+						cannons.push(c);
+						i += 3;
+					}
+				}
+				///////
+				
+				// Now, shoot a missile from each one
+				for (var j = 0; j < cannons.length; j++) {
+					// repeated: need a generic function to translate between column and coords
+					var x = planetX + ((PLANET_RADIUS + (4 * BLOCK_WIDTH))* Math.cos((2+cannons[j])*columnAngle));
+					var y = planetY + ((PLANET_RADIUS + (4 * BLOCK_WIDTH)) * Math.sin((2+cannons[j])*columnAngle));
+					missiles.push(new Point(x, y));
+				}
+				
+				
+			}
+		}
 	
 	};
 	
@@ -140,9 +186,11 @@ var Binary = function () {
 		
 		if (mode == REBUILD) {
 			$("#rebuildb").attr("disabled", true);
+			$("#canvas").removeClass("war");
 		}
 		else if (mode == WAR) {
 			$("#warb").attr("disabled", true);
+			$("#canvas").addClass("war");
 		}
 	};
 	
@@ -198,11 +246,7 @@ var Binary = function () {
 			}
 			
 		}
-		
-		
-	
-		
-	
+			
 		return cols;
 	};
 	
@@ -233,6 +277,7 @@ var Binary = function () {
 		columnAngle = Math.PI * 2 / nColumns;
 		mouseInThreshold = false;
 		buildMode = NO_BUILD;
+		shooting = false;
 		
 		toggleMode(REBUILD);
 
@@ -242,13 +287,8 @@ var Binary = function () {
 
 	var update = function() {
 
-		// find the column
-		if (mouseInThreshold) {
-			planetColor = 'red';
-			
-		}
-		else {
-			planetColor = 'black';
+		if (gameMode == WAR) {
+			// process missiles
 		}
 
 	};
@@ -307,6 +347,16 @@ var Binary = function () {
 		}
 	}
 	
+	
+	var drawMissile = function(point, color) {
+		ctx.save();
+		ctx.fillStyle = color;
+		ctx.beginPath();
+		ctx.arc(point.x, point.y, 2, 0, Math.PI*2);
+		ctx.fill();
+		ctx.restore();
+	}
+	
 	var draw = function() {
 		
 		ctx.clearRect(0, 0, WIDTH, HEIGHT);
@@ -320,15 +370,23 @@ var Binary = function () {
 		
 		
 		// draw mouse position
-		if (mouseInThreshold) {
-			if (buildMode == TOWER && isBlockEmpty(mouseColumn, mouseLevel)) {
-				drawBlock(planetX, planetY, mouseColumn, mouseLevel, 'green');
-			}
-			else if (buildMode == CANNON && canBuildCannon(mouseColumn)) {
-				drawCannon(planetX, planetY, mouseColumn, 'orange');
+		if (gameMode == REBUILD) {
+			if (mouseInThreshold) {
+				if (buildMode == TOWER && isBlockEmpty(mouseColumn, mouseLevel)) {
+					drawBlock(planetX, planetY, mouseColumn, mouseLevel, 'green');
+				}
+				else if (buildMode == CANNON && canBuildCannon(mouseColumn)) {
+					drawCannon(planetX, planetY, mouseColumn, 'orange');
+				}
 			}
 		}
-		
+		else if (gameMode == WAR) {
+			if (shooting) {
+				for (var m = 0; m < missiles.length; m++) {
+					drawMissile(missiles[m], 'gray');
+				}
+			}
+		}
 		//ctx.save();
 		//ctx.fillStyle = planetColor;
 		//ctx.fill();
