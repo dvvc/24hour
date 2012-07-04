@@ -2,7 +2,7 @@ var Binary = function () {
 
 	/* Constants */
 	var WIDTH = 1024, HEIGHT = 640;
-	var PLANET_RADIUS = 100;
+	var PLANET_RADIUS = 80;
 	var BLOCK_WIDTH = 4;
 	var PLANET_THRESHOLD = 40;
 	var CANNON_THRESHOLD = 30;
@@ -12,6 +12,7 @@ var Binary = function () {
 	var SHOOTING_ANGLE = Math.PI; // In radians
 	var MISSILE_SPEED = 6, EXPLOSION_RADIUS = 2;
 	var NO_COL = 0, COL_PLANET = 1, COL_BUILDINGS = 2, COL_OUTBOUNDS = 3;
+	var PLANET1_X = 300, PLANET1_Y = 200, PLANET2_X = 700, PLANET2_Y = 400;
 	
 	/* Globals */
 	var ctx;
@@ -25,20 +26,10 @@ var Binary = function () {
 	var cannonList = [], cannonColumns = [], selectedCannon;
 	var planetColor = 'black';
 	var nColumns, columnAngle;
-	var planetX = 300, planetY = 200;
 	
-	var planet2X = 700, planet2Y = 400;
-	var columns2;
+	var planet1, planet2;
 	
-	/**
-	* The columns array determines what is there in the planet at a certain point. Columns are counted starting from theta = 0 rad
-	* (or x=RADIUS, y=0), and advance *counterclockwise*. There are as many columns as PLANET_CIRC / BLOCK_WIDTH. Therefore we can
-	* calculate the current column by dividing the angle between nColumns.
-	* The contents of the array are arrays themselves, with an entry for each level above the ground. The contents of each element in
-	* the second array tell what type of construction is there: 0 -> Nothing, 1 -> tower, 2 -> Cannon
-	*/
-	var columns;
-
+	
 	/************************** Classes ******************************/
 	var Point = function(x, y) {
 		this.x = x;
@@ -60,6 +51,78 @@ var Binary = function () {
 		this.direction = d;
 	}
 	
+	/****************************** PLANET ***********************/
+	/**
+	* The columns array determines what is there in the planet at a certain point. Columns are counted starting from theta = 0 rad
+	* (or x=RADIUS, y=0), and advance *counterclockwise*. There are as many columns as PLANET_CIRC / BLOCK_WIDTH. Therefore we can
+	* calculate the current column by dividing the angle between nColumns.
+	* The contents of the array are arrays themselves, with an entry for each level above the ground. The contents of each element in
+	* the second array tell what type of construction is there: 0 -> Nothing, 1 -> tower, 2 -> Cannon
+	*/
+	
+	var Planet = function(p) {
+		this.position = p;
+		this.columns = Array(nColumns);
+	}
+	
+	Planet.prototype.x = function() { return this.position.x; }
+	Planet.prototype.y = function() { return this.position.y; }
+	
+	Planet.prototype.generateEmptyPlanet = function() {
+	
+		for (var i = 0; i < nColumns; i++) {
+			var stack = Array(MAX_LEVELS);
+			for (var j = 0; j < MAX_LEVELS; j++) {
+				stack[j] = 0;
+			}
+			this.columns[i] = stack;
+		}
+	};
+	
+	Planet.prototype.generateRandomPlanet = function() {
+
+		var nPeaks = 6;
+		var width = 10;
+		var peak;
+		var arr;
+		
+		this.generateEmptyPlanet();
+		
+		// choose the initial peaks
+		for (var i = 0; i < nPeaks; i++) {
+		
+			arr = Array(width);
+		
+			peak = i*Math.floor(nColumns/nPeaks);
+			_midpointDispl(arr, 0, width, 1, 0.9);
+			
+			for(var j=0; j<width; j++) {
+				for(var z=0; z<arr[j]; z++) {
+					this.columns[peak+j][z] = 1;
+				}
+			}
+			
+		}
+	}
+	
+	Planet.prototype.isBlockEmpty = function(column, level) {
+		return this.columns[column][level] === 0;
+	};
+	
+	// Perhaps should make it member of Planet
+	var _midpointDispl = function(arr, low, high, h, dampen) {
+	
+		if (low >= high) return;
+		
+		var mid = low + (Math.floor((high - low) / 2));
+		var rand = 4 + Math.floor(Math.random() * 4);
+		
+		arr[mid] = Math.floor(rand * h);
+		
+		_midpointDispl(arr, low, mid, h * dampen, dampen);
+		_midpointDispl(arr, mid+1, high, h * dampen, dampen);
+	
+	};
 	/************************** Functions *****************************/
 	
 	var coordsToColumn = function(p, planetPos) {
@@ -79,17 +142,17 @@ var Binary = function () {
 	var updateMousePosition = function(evt) {
 	
 		var distToPlanet, mousePos;
-		
+		var columns = planet1.columns;
 		
 		mousePos = new Point(evt.clientX - canvasLeft, evt.clientY - canvasTop);
 		
 		// find if the mouse is in the corona at PLANET_THRESHOLD distance of the circumference
-		distToPlanet = mousePos.distance(new Point(planetX,planetY));
+		distToPlanet = mousePos.distance(planet1.position);
 		mouseInThreshold = (distToPlanet > (PLANET_RADIUS - PLANET_THRESHOLD)) && (distToPlanet < (PLANET_RADIUS + PLANET_THRESHOLD));
 		
 		// if the mouse is in the threshold, calculate the column
 		if (mouseInThreshold) {
-			var arr = coordsToColumn(mousePos, new Point(planetX,planetY));
+			var arr = coordsToColumn(mousePos, planet1.position);
 			mouseColumn = arr[0];
 			//console.log(arr[1]);
 			
@@ -126,15 +189,13 @@ var Binary = function () {
 		}
 	};
 
-	var isBlockEmpty = function(column, level) {
-		return columns[column][level] == 0;
-	}
+
 	
 	// all base blocks in the cannon place need to be empty
 	var canBuildCannon = function(column) {
 	
 		for (var i = column; i < column+4; i++) {
-			if (!isBlockEmpty(i%nColumns, 0)) {
+			if (!planet1.isBlockEmpty(i%nColumns, 0)) {
 				return false;
 			}
 		}
@@ -146,10 +207,12 @@ var Binary = function () {
 	
 	var handleMouseClick = function(evt) {
 	
+		var columns = planet1.columns;
+	
 		if (gameMode == REBUILD) {
 			if (mouseInThreshold) {
 				if (buildMode == TOWER) {
-					if (isBlockEmpty(mouseColumn, mouseLevel)) {
+					if (planet1.isBlockEmpty(mouseColumn, mouseLevel)) {
 						columns[mouseColumn][mouseLevel] = 1;
 						updateMousePosition(evt);
 					}
@@ -157,7 +220,7 @@ var Binary = function () {
 				else if (buildMode == CANNON) {
 					if (canBuildCannon(mouseColumn)) {
 						var cannonPosition = columnToCoords(2+mouseColumn, (BLOCK_WIDTH) +PLANET_RADIUS);
-						cannonPosition.add(new Point(planetX, planetY));
+						cannonPosition.add(planet1.position);
 						
 						cannonList.push(cannonPosition);
 						cannonColumns.push(mouseColumn);
@@ -186,7 +249,7 @@ var Binary = function () {
 				var missilePos = columnToCoords(2+cannonColumns[selectedCannon], PLANET_RADIUS + (4*BLOCK_WIDTH));
 					
 				//translate by adding the planet position
-				missilePos.add(new Point(planetX, planetY));
+				missilePos.add(planet1.position);
 				
 				// direction
 				var h = Math.sqrt(Math.pow(mousePos.y - cannonList[selectedCannon].y, 2) + 
@@ -248,61 +311,6 @@ var Binary = function () {
 	};
 	
 	
-	var makeEmptyPlanet = function() {
-		var cols = Array(nColumns);
-		for (var i = 0; i < nColumns; i++) {
-			var stack = Array(MAX_LEVELS);
-			for (var j = 0; j < MAX_LEVELS; j++) {
-				stack[j] = 0;
-			}
-			cols[i] = stack;
-		}
-		return cols;
-	};
-	
-	var midpointDispl = function(arr, low, high, h, dampen) {
-	
-		if (low >= high) return;
-		
-		var mid = low + (Math.floor((high - low) / 2));
-		var rand = 4 + Math.floor(Math.random() * 4);
-		
-		arr[mid] = Math.floor(rand * h);
-		
-		midpointDispl(arr, low, mid, h * dampen, dampen);
-		midpointDispl(arr, mid+1, high, h * dampen, dampen);
-	
-	};
-	
-	var generatePlanet2 = function() {
-	
-		var cols;
-		var nPeaks = 6;
-		var width = 10;
-		var peak;
-		var arr;
-		
-		cols = makeEmptyPlanet();
-		
-		// choose the initial peaks
-		for (var i = 0; i < nPeaks; i++) {
-		
-			arr = Array(width);
-		
-			peak = i*Math.floor(nColumns/nPeaks);
-			midpointDispl(arr, 0, width, 1, 0.9);
-			
-			for(var j=0; j<width; j++) {
-				for(var z=0; z<arr[j]; z++) {
-					cols[peak+j][z] = 1;
-				}
-			}
-			
-		}
-			
-		return cols;
-	};
-	
 	// toggle debug
 	var doDebug = function() {
 		debug = debug ? false : true;
@@ -324,12 +332,15 @@ var Binary = function () {
 		$("#warb").click(function() {toggleMode(WAR); });
 		$("#debugb").click(doDebug);
 		
+		planet1 = new Planet(new Point(PLANET1_X, PLANET1_Y));
+		planet2 = new Planet(new Point(PLANET2_X, PLANET2_Y));
+		
 		planetCirc = 2 * Math.PI * PLANET_RADIUS;
 			
 		nColumns = Math.floor(planetCirc / BLOCK_WIDTH);
-		columns = makeEmptyPlanet();
-			
-		columns2 = generatePlanet2();
+		planet1.generateEmptyPlanet();
+		planet2.generateRandomPlanet();
+		
 			
 		columnAngle = Math.PI * 2 / nColumns;
 		mouseInThreshold = false;
@@ -349,19 +360,19 @@ var Binary = function () {
 		var cols, planetPos, distToPlanet;
 	
 		if (team === 0) {
-			cols = columns;
-			planetPos = new Point(planetX, planetY);
+			cols = planet1.columns;
+			planetPos = planet1.position;
 		}
 		else {
-			cols = columns2;
-			planetPos = new Point(planet2X, planet2Y);
+			cols = planet2.columns;
+			planetPos = planet2.position;
 		}
 		
 		distToPlanet = p.distance(planetPos);
 		
 		// check if the collision was against the planet itself
-		if ( (p.distance(new Point(planetX, planetY)) <= PLANET_RADIUS) || 
-			 (p.distance(new Point(planet2X, planet2Y)) <= PLANET_RADIUS)) { //distToPlanet <= PLANET_RADIUS) {
+		if ( (p.distance(planet1.position) <= PLANET_RADIUS) || 
+			 (p.distance(planet2.position) <= PLANET_RADIUS)) { //distToPlanet <= PLANET_RADIUS) {
 			return COL_PLANET;
 		}
 		
@@ -428,34 +439,36 @@ var Binary = function () {
 	};
 
 	// px and py are the planet's center coordinates
-	var drawBlock = function(px, py, column, level, color) {
+	var drawBlock = function(planet, column, level, color) {
 		ctx.save()
 		ctx.fillStyle = color;
 		var x = ((PLANET_RADIUS + (level * BLOCK_WIDTH))* Math.cos(column*columnAngle));
 		var y = ((PLANET_RADIUS + (level * BLOCK_WIDTH)) * Math.sin(column*columnAngle));
-		ctx.translate(px+x, py+y);
+		ctx.translate(x + planet.x(), y+planet.y());
 		ctx.rotate(column*columnAngle);
 		ctx.fillRect(0, 0, BLOCK_WIDTH, BLOCK_WIDTH);
 		ctx.restore()
 	}
 	
-	var drawCannon = function(px, py, column, color) {
+	var drawCannon = function(planet, column, color) {
 		for (var c = column; c < column + 4; c++) {
-			drawBlock(px, py, c, 0, color);
+			drawBlock(planet, c, 0, color);
 		}
-		drawBlock(px, py, column+1, 1, color);
-		drawBlock(px, py, column+2, 1, color);
-		drawBlock(px, py, column+1, 2, color);
-		drawBlock(px, py, column+2, 2, color);
+		drawBlock(planet, column+1, 1, color);
+		drawBlock(planet, column+2, 1, color);
+		drawBlock(planet, column+1, 2, color);
+		drawBlock(planet, column+2, 2, color);
 	}
 	
-	var drawPlanet = function(px, py, cols, color) {
+	var drawPlanet = function(planet, color) {
+		
+		var cols = planet.columns;
 		
 		color = color || 'white';
 		
 		ctx.save();
 		ctx.beginPath();
-		ctx.arc(px, py, PLANET_RADIUS, 0, Math.PI * 2);
+		ctx.arc(planet.x(), planet.y(), PLANET_RADIUS, 0, Math.PI * 2);
 		ctx.stroke();
 		ctx.fillStyle = color;
 		ctx.fill();
@@ -474,14 +487,14 @@ var Binary = function () {
 			
 			// if a column has a 2, draw a cannon, then skip three more columns
 			if (cols[c][0] == CANNON) {
-				drawCannon(px, py, c, 'red');
+				drawCannon(planet, c, 'red');
 				i += 3;
 			}
 			else {
 				// else, try a tower
 				for (var j=0; j < MAX_LEVELS; j++) {
 					if (cols[c][j] == 1) {
-						drawBlock(px, py, c,j, 'black');
+						drawBlock(planet, c,j, 'black');
 					}
 				}
 			}
@@ -518,21 +531,21 @@ var Binary = function () {
 		ctx.clearRect(0, 0, WIDTH, HEIGHT);
 		
 		// Planet One
-		drawPlanet(planetX, planetY, columns);
+		drawPlanet(planet1);
 		
 		// Planet Two
-		drawPlanet(planet2X, planet2Y, columns2, '#eee');
+		drawPlanet(planet2, '#eee');
 		
 		
 		
 		// draw mouse position
 		if (gameMode == REBUILD) {
 			if (mouseInThreshold) {
-				if (buildMode == TOWER && isBlockEmpty(mouseColumn, mouseLevel)) {
-					drawBlock(planetX, planetY, mouseColumn, mouseLevel, 'green');
+				if (buildMode == TOWER && planet1.isBlockEmpty(mouseColumn, mouseLevel)) {
+					drawBlock(planet1, mouseColumn, mouseLevel, 'green');
 				}
 				else if (buildMode == CANNON && canBuildCannon(mouseColumn)) {
-					drawCannon(planetX, planetY, mouseColumn, 'orange');
+					drawCannon(planet1, mouseColumn, 'orange');
 				}
 			}
 		}
