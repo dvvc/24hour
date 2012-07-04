@@ -2,6 +2,7 @@ var Binary = function () {
 
 	/* Constants */
 	var WIDTH = 1024, HEIGHT = 640;
+	var MS_PER_FRAME = 25;
 	var PLANET_RADIUS = 80;
 	var BLOCK_WIDTH = 4;
 	var PLANET_THRESHOLD = 40;
@@ -13,6 +14,11 @@ var Binary = function () {
 	var MISSILE_SPEED = 6, EXPLOSION_RADIUS = 2;
 	var NO_COL = 0, COL_PLANET = 1, COL_BUILDINGS = 2, COL_OUTBOUNDS = 3;
 	var PLANET1_X = 300, PLANET1_Y = 200, PLANET2_X = 700, PLANET2_Y = 400;
+	var PLANET1_COLOR = '#74A4E8', PLANET2_COLOR = 'E9B2F7';
+	var CANNON_COLOR = 'E34B4D';
+	var SECONDS_PER_ROTATION = 20;
+	var RADS_PER_FRAME = (Math.PI * 2 * MS_PER_FRAME) / (SECONDS_PER_ROTATION * 1000);
+	
 	
 	/* Globals */
 	var ctx;
@@ -63,6 +69,7 @@ var Binary = function () {
 	var Planet = function(p) {
 		this.position = p;
 		this.columns = Array(nColumns);
+		this.rotation = 0;
 	}
 	
 	Planet.prototype.x = function() { return this.position.x; }
@@ -78,6 +85,10 @@ var Binary = function () {
 			this.columns[i] = stack;
 		}
 	};
+	
+	Planet.prototype.addRotation = function(rads) {
+		this.rotation = (this.rotation + rads) % (Math.PI*2);
+	}
 	
 	Planet.prototype.generateRandomPlanet = function() {
 
@@ -125,14 +136,16 @@ var Binary = function () {
 	};
 	/************************** Functions *****************************/
 	
-	var coordsToColumn = function(p, planetPos) {
+	var coordsToColumn = function(p, planet) {
 	
 		var angle, column, dist, level;
+		var planetPos = planet.position;
 		
-		angle = (Math.atan2(p.y-planetPos.y, p.x-planetPos.x) + Math.PI*2) % (Math.PI*2);
+		angle = ((Math.atan2(p.y-planetPos.y, p.x-planetPos.x) + Math.PI*2) - planet.rotation) % (Math.PI*2);
 		column = ((Math.floor(angle / columnAngle) *columnAngle) * nColumns) / (Math.PI * 2);
 		// hack to avoid rounding errors like 24.9999999
 		column = Math.floor(column + 0.5);
+		//console.log(column);
 		
 		dist = p.distance(planetPos);
 		level = Math.floor((dist - PLANET_RADIUS) / BLOCK_WIDTH);
@@ -152,7 +165,7 @@ var Binary = function () {
 		
 		// if the mouse is in the threshold, calculate the column
 		if (mouseInThreshold) {
-			var arr = coordsToColumn(mousePos, planet1.position);
+			var arr = coordsToColumn(mousePos, planet1);
 			mouseColumn = arr[0];
 			//console.log(arr[1]);
 			
@@ -357,14 +370,16 @@ var Binary = function () {
 	// agains which team are we checking?
 	var detectCollision = function(p, team) {
 	
-		var cols, planetPos, distToPlanet;
+		var cols, planetPos, distToPlanet, planet;
 	
 		if (team === 0) {
 			cols = planet1.columns;
+			planet = planet1;
 			planetPos = planet1.position;
 		}
 		else {
 			cols = planet2.columns;
+			planet = planet2;
 			planetPos = planet2.position;
 		}
 		
@@ -384,7 +399,7 @@ var Binary = function () {
 		if (distToPlanet > PLANET_RADIUS && distToPlanet < (PLANET_RADIUS + (BLOCK_WIDTH * MAX_LEVELS))) {
 		
 			// check which column and level it collided to
-			var arr = coordsToColumn(p, planetPos);
+			var arr = coordsToColumn(p, planet);
 			var c = arr[0];
 			var l = arr[1];
 			var c2;
@@ -412,8 +427,8 @@ var Binary = function () {
 
 		var pos, dir, missiles2 = [];
 		
+		// process missiles
 		if (gameMode == WAR) {
-			// process missiles
 			for (var m = 0; m < missiles.length; m++) {
 					pos = missiles[m].position;
 					dir = missiles[m].direction;
@@ -431,10 +446,11 @@ var Binary = function () {
 					
 			}
 			missiles = missiles2;
-			
-			
-			
 		}
+		
+		// rotate the planets
+		planet1.addRotation(RADS_PER_FRAME);
+		planet2.addRotation(RADS_PER_FRAME);
 
 	};
 
@@ -442,10 +458,10 @@ var Binary = function () {
 	var drawBlock = function(planet, column, level, color) {
 		ctx.save()
 		ctx.fillStyle = color;
-		var x = ((PLANET_RADIUS + (level * BLOCK_WIDTH))* Math.cos(column*columnAngle));
-		var y = ((PLANET_RADIUS + (level * BLOCK_WIDTH)) * Math.sin(column*columnAngle));
+		var x = ((PLANET_RADIUS + (level * BLOCK_WIDTH))* Math.cos(column*columnAngle + planet.rotation));
+		var y = ((PLANET_RADIUS + (level * BLOCK_WIDTH)) * Math.sin(column*columnAngle + planet.rotation));
 		ctx.translate(x + planet.x(), y+planet.y());
-		ctx.rotate(column*columnAngle);
+		ctx.rotate(column*columnAngle + planet.rotation);
 		ctx.fillRect(0, 0, BLOCK_WIDTH, BLOCK_WIDTH);
 		ctx.restore()
 	}
@@ -464,10 +480,11 @@ var Binary = function () {
 		
 		var cols = planet.columns;
 		
-		color = color || 'white';
+		color = color || '#eee';
 		
 		ctx.save();
 		ctx.beginPath();
+		ctx.strokeStyle = color;
 		ctx.arc(planet.x(), planet.y(), PLANET_RADIUS, 0, Math.PI * 2);
 		ctx.stroke();
 		ctx.fillStyle = color;
@@ -487,14 +504,14 @@ var Binary = function () {
 			
 			// if a column has a 2, draw a cannon, then skip three more columns
 			if (cols[c][0] == CANNON) {
-				drawCannon(planet, c, 'red');
+				drawCannon(planet, c, CANNON_COLOR);
 				i += 3;
 			}
 			else {
 				// else, try a tower
 				for (var j=0; j < MAX_LEVELS; j++) {
 					if (cols[c][j] == 1) {
-						drawBlock(planet, c,j, 'black');
+						drawBlock(planet, c,j, color);
 					}
 				}
 			}
@@ -531,10 +548,10 @@ var Binary = function () {
 		ctx.clearRect(0, 0, WIDTH, HEIGHT);
 		
 		// Planet One
-		drawPlanet(planet1);
+		drawPlanet(planet1, PLANET1_COLOR);
 		
 		// Planet Two
-		drawPlanet(planet2, '#eee');
+		drawPlanet(planet2, PLANET2_COLOR);
 		
 		
 		
@@ -586,7 +603,7 @@ var Binary = function () {
 		loopTime = new Date().getTime() - startLoop;
 		ctx.fillText(Math.floor((1000/loopTime)) + " FPS", WIDTH - 80, HEIGHT - 20);
 		ctx.fillText("Angle: " + mouseAngle, WIDTH - 80, HEIGHT - 40);
-		setTimeout(mainLoop, 25);
+		setTimeout(mainLoop, MS_PER_FRAME);
 	
 	};
 
