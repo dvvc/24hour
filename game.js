@@ -71,6 +71,7 @@ var Binary = function () {
 		this.position = p;
 		this.columns = Array(nColumns);
 		this.rotation = 0;
+		this.cannons = [];
 	};
 	
 	Planet.prototype.x = function() { return this.position.x; };
@@ -137,13 +138,23 @@ var Binary = function () {
 				candidateCannon = Math.floor(Math.random() * nColumns);	
 			} while(this.canPlaceCannon(candidateCannon));
 			
-			
+			this.cannons.push(candidateCannon);
+			this.addCannon(candidateCannon);
 
 			placedCannons++;
 
 			
 		}
 		
+	};
+
+	Planet.prototype.addCannon = function(column) {
+		
+		for (var i=column; i < column + 4; i++) {
+			for (var j=0; j < MAX_LEVELS; j++) {
+				this.columns[i%nColumns][j] = 2;
+			}
+		}
 	};
 
 	Planet.prototype.isBlockEmpty = function(column, level) {
@@ -223,8 +234,8 @@ var Binary = function () {
 			
 				// detect if the mouse is close to a cannon
 				if (!shooting) {
-					for(var c=0; c<cannonColumns.length; c++) {
-						var cp = columnToCoords(2+cannonColumns[c], (BLOCK_WIDTH) +PLANET_RADIUS);
+					for(var c=0; c<planet1.cannons.length; c++) {
+						var cp = columnToCoords(2+planet1.cannons[c], (BLOCK_WIDTH) +PLANET_RADIUS);
 						//alert(cannonColumns[c] + ", " + cp.x + " " + cp.y);
 						
 						if (mousePos.distance(cp) < CANNON_THRESHOLD) {
@@ -260,14 +271,9 @@ var Binary = function () {
 						var cannonPosition = columnToCoords(2+mouseColumn, (BLOCK_WIDTH) +PLANET_RADIUS);
 						cannonPosition.add(planet1.position);
 						
-						cannonList.push(cannonPosition);
-						cannonColumns.push(mouseColumn);
+						planet1.cannons.push(mouseColumn);
 						
-						for (var i=mouseColumn; i < mouseColumn + 4; i++) {
-							for (var j=0; j < MAX_LEVELS; j++) {
-								columns[i][j] = 2;
-							}
-						}
+						planet1.addCannon(mouseColumn);
 					}
 				}
 				
@@ -284,10 +290,10 @@ var Binary = function () {
 				
 				
 				// Shoot a missile from the selected cannon
-				var missilePos = columnToCoords(2+cannonColumns[selectedCannon], PLANET_RADIUS + (4*BLOCK_WIDTH));
+				var missilePos = columnToCoords(2+planet1.cannons[selectedCannon], PLANET_RADIUS + (4*BLOCK_WIDTH));
 									
 				// direction
-				var cp = columnToCoords(2+cannonColumns[selectedCannon], (BLOCK_WIDTH) +PLANET_RADIUS);
+				var cp = columnToCoords(2+planet1.cannons[selectedCannon], (BLOCK_WIDTH) +PLANET_RADIUS);
 
 				var h = Math.sqrt(Math.pow(mousePos.y - cp.y, 2) + 
 								  Math.pow(mousePos.x - cp.x, 2));
@@ -529,7 +535,6 @@ var Binary = function () {
 		
 		// draw the columns
 		for (var i = startColumn; i < nColumns+startColumn; i++) {
-		
 			var c = i%nColumns;
 			
 			// if a column has a 2, draw a cannon, then skip three more columns
@@ -562,7 +567,7 @@ var Binary = function () {
 	
 	var drawShootingArc = function() {
 	
-		var cc = cannonColumns[selectedCannon];
+		var cc = planet1.cannons[selectedCannon];
 		// repeated around
 		var cpos = columnToCoords(2+cc, (BLOCK_WIDTH) +PLANET_RADIUS);
 		ctx.save();
