@@ -1,0 +1,16 @@
+
+
+div#wrapper {
+
+}
+
+canvas#canvas {
+	border: solid thin black;
+	width: 1024px;
+	float: left;
+}
+
+div#buttons {
+	width: 200px;
+	float: left;
+}
