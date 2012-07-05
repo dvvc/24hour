@@ -559,9 +559,12 @@ var Binary = function () {
 				ctx.translate(planet.x(), planet.y());
 				ctx.rotate(c*columnAngle + planet.rotation);
 				ctx.translate(PLANET_RADIUS, 0);
+				
+				var height=0;
 				for (var j=0; j < MAX_LEVELS; j++) {
-					//ctx.translate(BLOCK_WIDTH, 0);
+					
 					if (cols[c][j] == 1) {
+						height++;
 						////// ---- This belongs to drawBlock
 						//ctx.save();
 						
@@ -569,12 +572,24 @@ var Binary = function () {
 						//var y = ((PLANET_RADIUS + (j * BLOCK_WIDTH)) * Math.sin(c*columnAngle + planet.rotation));
 						//ctx.translate(j*BLOCK_WIDTH, 0);
 						
-						ctx.fillRect(0, 0, BLOCK_WIDTH, BLOCK_WIDTH);
+						//ctx.fillRect(0, 0, BLOCK_WIDTH, BLOCK_WIDTH);
 						//ctx.restore();
 						///// ------
 					}
-					ctx.translate(BLOCK_WIDTH, 0);
+					else {
+						if (height > 0) {
+							ctx.fillRect((j-height)*BLOCK_WIDTH, 0, BLOCK_WIDTH * height, BLOCK_WIDTH);
+							height = 0;
+						}
+						
+					}
+					//ctx.translate(BLOCK_WIDTH, 0);
 				}
+				// draw last blocks if the tower reached the top
+				if (height > 0) {
+					ctx.fillRect((j-height)*BLOCK_WIDTH, 0, BLOCK_WIDTH * height, BLOCK_WIDTH);
+				}
+				
 				ctx.restore();
 				
 			}
