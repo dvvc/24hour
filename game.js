@@ -18,7 +18,7 @@ var Binary = function () {
 	var CANNON_COLOR = 'E34B4D';
 	var SECONDS_PER_ROTATION = 20;
 	var RADS_PER_FRAME = (Math.PI * 2 * MS_PER_FRAME) / (SECONDS_PER_ROTATION * 1000);
-	var PLANET2_PEAKS = 4, PLANET2_PEAK_WIDTH = 6, PLANET2_CANNONS = 4;	
+	var PLANET2_PEAKS = 8, PLANET2_PEAK_WIDTH = 10, PLANET2_CANNONS = 4;	
 	
 	/* Globals */
 	var ctx;
@@ -512,7 +512,7 @@ var Binary = function () {
 		drawBlock(planet, column+2, 2, color);
 	};
 	
-	var drawPlanet = function(planet, color) {
+	var drawPlanet = function (planet, color) {
 		
 		var cols = planet.columns;
 		
@@ -539,18 +539,47 @@ var Binary = function () {
 			
 			// if a column has a 2, draw a cannon, then skip three more columns
 			if (cols[c][0] == CANNON) {
-				drawCannon(planet, c, CANNON_COLOR);
+				//drawCannon(planet, c, CANNON_COLOR);
+				// --------- draw cannon -------------
+				for (var c2= c; c2 < c + 4; c2++) {
+					drawBlock(planet, c2, 0, CANNON_COLOR);
+				}
+				drawBlock(planet, c+1, 1, CANNON_COLOR);
+				drawBlock(planet, c+2, 1, CANNON_COLOR);
+				drawBlock(planet, c+1, 2, CANNON_COLOR);
+				drawBlock(planet, c+2, 2, CANNON_COLOR);
 				i += 3;
+				// -------------------------------------
 			}
 			else {
 				// else, try a tower
+			
+				ctx.save();
+				ctx.fillStyle = color;
+				ctx.translate(planet.x(), planet.y());
+				ctx.rotate(c*columnAngle + planet.rotation);
+				ctx.translate(PLANET_RADIUS, 0);
 				for (var j=0; j < MAX_LEVELS; j++) {
+					//ctx.translate(BLOCK_WIDTH, 0);
 					if (cols[c][j] == 1) {
-						drawBlock(planet, c,j, color);
+						////// ---- This belongs to drawBlock
+						//ctx.save();
+						
+						//var x = ((PLANET_RADIUS + (j * BLOCK_WIDTH))* Math.cos(c*columnAngle + planet.rotation));
+						//var y = ((PLANET_RADIUS + (j * BLOCK_WIDTH)) * Math.sin(c*columnAngle + planet.rotation));
+						//ctx.translate(j*BLOCK_WIDTH, 0);
+						
+						ctx.fillRect(0, 0, BLOCK_WIDTH, BLOCK_WIDTH);
+						//ctx.restore();
+						///// ------
 					}
+					ctx.translate(BLOCK_WIDTH, 0);
 				}
+				ctx.restore();
+				
 			}
 		}
+		
 	};
 	
 	
